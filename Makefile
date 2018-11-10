@@ -16,4 +16,7 @@ packr:
 build: packr
 	CGO_ENABLED=1 go build -o ./target/chaind ./cmd/chaind/main.go
 
+install-global: build
+	sudo mv ./target/chaind /usr/bin
+
 .PHONY: build
