@@ -9,9 +9,19 @@ import (
 	"syscall"
 	"github.com/kyokan/chaind/pkg/log"
 	"github.com/kyokan/chaind/internal/audit"
+	"github.com/kyokan/chaind/internal/cache"
+	"github.com/inconshreveable/log15"
 )
 
 func Start(cfg *config.Config) error {
+	logger := log.NewLog("")
+	lvl, err := log15.LvlFromString(cfg.LogLevel)
+	if err != nil {
+		logger.Warn("invalid log level, falling back to INFO", "level", cfg.LogLevel)
+		lvl = log15.LvlInfo
+	}
+	log.SetLevel(lvl)
+
 	store, err := storage.StorageFromURL(cfg.DBUrl)
 	if err != nil {
 		return err
@@ -20,12 +30,17 @@ func Start(cfg *config.Config) error {
 		return err
 	}
 
+	cacher := cache.NewRedisCacher(cfg.RedisConfig)
+	if err := cacher.Start(); err != nil {
+	    return err
+	}
+
 	auditor, err := audit.NewLogAuditor(cfg.LogAuditorConfig)
 	if err != nil {
 		return err
 	}
 
-	prox := proxy.NewProxy(store, auditor, cfg)
+	prox := proxy.NewProxy(store, auditor, cacher, cfg)
 	if err := prox.Start(); err != nil {
 		return err
 	}
@@ -33,11 +48,13 @@ func Start(cfg *config.Config) error {
 	sigs := make(chan os.Signal, 1)
 	done := make(chan bool, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	logger := log.NewLog("")
 
 	go func() {
 		<-sigs
 		logger.Info("interrupted, shutting down")
+		if err := cacher.Stop(); err != nil {
+		    logger.Error("failed to stop cacher", "err", err)
+		}
 		if err := store.Stop(); err != nil {
 			logger.Error("failed to stop storage", "err", err)
 		}

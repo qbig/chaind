@@ -3,8 +3,8 @@ package pkg
 type BackendType string
 
 const (
-	EthereumBackendType BackendType = "ETH"
-	BitcoinBackendType  BackendType = "BTC"
+	EthBackend BackendType = "ETH"
+	BtcBackend BackendType = "BTC"
 )
 
 type Backend struct {

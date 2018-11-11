@@ -6,6 +6,8 @@ import (
 	"github.com/kyokan/chaind/pkg"
 	"encoding/json"
 	"github.com/pkg/errors"
+	"github.com/kyokan/chaind/pkg/rpc"
+	"net/http"
 )
 
 type LogAuditor struct {
@@ -29,43 +31,52 @@ func NewLogAuditor(cfg *config.LogAuditorConfig) (Auditor, error) {
 	}, nil
 }
 
-func (l *LogAuditor) RecordRequest(req *pkg.WrappedRequest, reqType pkg.BackendType) error {
-	if reqType == pkg.EthereumBackendType {
-		return l.recordETHRequest(req)
+func (l *LogAuditor) RecordRequest(req *http.Request, body []byte, reqType pkg.BackendType) error {
+	if reqType == pkg.EthBackend {
+		return l.recordETHRequest(req, body)
 	}
 
 	return nil
 }
 
-func (l *LogAuditor) recordETHRequest(req *pkg.WrappedRequest) error {
-	var body pkg.EthereumRPCRequest
-	err := json.Unmarshal(req.Body(), &body)
+func (l *LogAuditor) recordETHRequest(req *http.Request, body []byte) error {
+	var rpcReq rpc.JSONRPCReq
+	err := json.Unmarshal(body, &rpcReq)
 	if err != nil {
 		l.logger.Error(
 			"received request with invalid JSON body",
-			MergeLogKeys(req, "type", pkg.EthereumBackendType)...,
+			mergeLogKeys(req, "type", pkg.EthBackend)...,
 		)
 		return nil
 	}
 
-	params, err := json.Marshal(body.Params)
+	params, err := json.Marshal(rpcReq.Params)
 	if err != nil {
 		return err
 	}
 	l.logger.Info(
 		"received JSON-RPC request",
-		MergeLogKeys(req, "rpc_method", body.Method, "rpc_params", string(params))...,
+		mergeLogKeys(req, "rpc_method", rpcReq.Method, "rpc_params", string(params))...,
 	)
 	return nil
 }
 
-func MergeLogKeys(req *pkg.WrappedRequest, keys... interface{}) []interface{} {
+func mergeLogKeys(req *http.Request, keys ... interface{}) []interface{} {
 	defaults := []interface{}{
 		"remote_addr",
-		req.RemoteAddr(),
+		remoteAddr(req),
 		"user_agent",
-		req.Header().Get("user-agent"),
+		req.Header.Get("user-agent"),
 	}
 
-	return append(keys, defaults...)
+	return rpc.LogWithRequestID(req.Context(), append(defaults, keys...))
+}
+
+func remoteAddr(req *http.Request) string {
+	realIp := req.Header.Get("x-real-ip")
+	if realIp != "" {
+		return realIp
+	}
+
+	return req.RemoteAddr
 }

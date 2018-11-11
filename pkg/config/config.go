@@ -3,7 +3,6 @@ package config
 import (
 	"github.com/spf13/viper"
 	"path"
-	"github.com/kyokan/chaind/pkg/log"
 	"os"
 	"fmt"
 	"github.com/mitchellh/go-homedir"
@@ -12,8 +11,6 @@ import (
 
 const DefaultHome = "~/.chaind"
 const DefaultConfigFile = "chaind.toml"
-
-var logger = log.NewLog("")
 
 const (
 	FlagHome     = "home"
@@ -33,11 +30,19 @@ type Config struct {
 	BTCUrl           string            `mapstructure:"btc_url"`
 	ETHUrl           string            `mapstructure:"eth_url"`
 	RPCPort          int               `mapstructure:"rpc_port"`
+	LogLevel         string            `mapstructure:"log_level"`
 	LogAuditorConfig *LogAuditorConfig `mapstructure:"log_auditor"`
+	RedisConfig      *RedisConfig      `mapstructure:"redis"`
 }
 
 type LogAuditorConfig struct {
 	LogFile string `mapstructure:"log_file"`
+}
+
+type RedisConfig struct {
+	URL      string `mapstructure:"url"`
+	Password string `mapstructure:"password"`
+	DB       int    `mapstructure:"db"`
 }
 
 func init() {

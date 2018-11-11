@@ -14,7 +14,7 @@ import (
 		"encoding/json"
 )
 
-const ethCheckBody = "{\"jsonrpc\":\"2.0\",\"method\":\"net_listening\",\"params\":[],\"id\":%d}"
+const ethCheckBody = "{\"jsonrpc\":\"2.0\",\"method\":\"eth_syncing\",\"params\":[],\"id\":%d}"
 
 type BackendSwitch struct {
 	ethBackends []pkg.Backend
@@ -106,7 +106,7 @@ func (h *BackendSwitch) Stop() error {
 func (h *BackendSwitch) BackendFor(t pkg.BackendType) (*pkg.Backend, error) {
 	var idx int32
 
-	if t == pkg.EthereumBackendType {
+	if t == pkg.EthBackend {
 		idx = atomic.LoadInt32(&h.currEth)
 	} else {
 		idx = atomic.LoadInt32(&h.currBtc)
@@ -153,7 +153,7 @@ func (h *BackendSwitch) nextBackend(idx int32, list []pkg.Backend) (int32, []pkg
 }
 
 func NewChecker(backend *pkg.Backend) Checker {
-	if backend.Type == pkg.EthereumBackendType {
+	if backend.Type == pkg.EthBackend {
 		return &ETHChecker{
 			backend: backend,
 			logger: log.NewLog("proxy/eth_checker"),
@@ -190,8 +190,8 @@ func (e *ETHChecker) Check() bool {
 		logger.Warn("backend returned invalid JSON", "name", e.backend.Name, "url", e.backend.URL)
 		return false
 	}
-	if listening, ok := dec["result"].(bool); !ok || !listening {
-		logger.Warn("backend is not listening for new peers", "name", e.backend.Name, "url", e.backend.URL)
+	if _, ok := dec["result"].(bool); !ok {
+		logger.Warn("backend is either completing initial sync or has fallen behind", "name", e.backend.Name, "url", e.backend.URL)
 		return false
 	}
 	return true
