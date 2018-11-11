@@ -2,49 +2,6 @@
 
 
 [[projects]]
-  branch = "master"
-  digest = "1:c0decf632843204d2b8781de7b26e7038584e2dcccc7e2f401e88ae85b1df2b7"
-  name = "github.com/btcsuite/btcd"
-  packages = ["btcec"]
-  pruneopts = "UT"
-  revision = "67e573d211ace594f1366b4ce9d39726c4b19bd0"
-
-[[projects]]
-  digest = "1:e47d51dab652d26c3fba6f8cba403f922d02757a82abdc77e90df7948daf296e"
-  name = "github.com/deckarep/golang-set"
-  packages = ["."]
-  pruneopts = "UT"
-  revision = "cbaa98ba5575e67703b32b4b19f73c91f3c4159e"
-  version = "v1.7.1"
-
-[[projects]]
-  digest = "1:261958acbdba62b940e4daf9c61282324a3c8834be653d96a26ee05025a11d5a"
-  name = "github.com/ethereum/go-ethereum"
-  packages = [
-    ".",
-    "common",
-    "common/hexutil",
-    "common/math",
-    "common/prque",
-    "core/types",
-    "crypto",
-    "crypto/secp256k1",
-    "crypto/sha3",
-    "ethclient",
-    "ethdb",
-    "log",
-    "metrics",
-    "p2p/netutil",
-    "params",
-    "rlp",
-    "rpc",
-    "trie",
-  ]
-  pruneopts = "UT"
-  revision = "8bbe72075e4e16442c4e28d999edee12e294329e"
-  version = "v1.8.17"
-
-[[projects]]
   digest = "1:abeb38ade3f32a92943e5be54f55ed6d6e3b6602761d74b4aab4c9dd45c18abd"
   name = "github.com/fsnotify/fsnotify"
   packages = ["."]
@@ -100,14 +57,6 @@
   pruneopts = "UT"
   revision = "cf1833a64494f56baea836890e2ee5e69c2092dc"
   version = "v1.19.0"
-
-[[projects]]
-  branch = "master"
-  digest = "1:4a0c6bb4805508a6287675fac876be2ac1182539ca8a32468d8128882e9d5009"
-  name = "github.com/golang/snappy"
-  packages = ["."]
-  pruneopts = "UT"
-  revision = "2e65f85255dbc3072edf28d6b5b8efc472979f5a"
 
 [[projects]]
   digest = "1:c0d19ab64b32ce9fe5cf4ddceba78d5bc9807f0016db6b1183599da3dcc24d10"
@@ -225,14 +174,6 @@
   version = "v0.8.0"
 
 [[projects]]
-  digest = "1:b0c25f00bad20d783d259af2af8666969e2fc343fa0dc9efe52936bbd67fb758"
-  name = "github.com/rs/cors"
-  packages = ["."]
-  pruneopts = "UT"
-  revision = "9a47f48565a795472d43519dd49aac781f3034fb"
-  version = "v1.6.0"
-
-[[projects]]
   digest = "1:274f67cb6fed9588ea2521ecdac05a6d62a8c51c074c1fccc6a49a40ba80e925"
   name = "github.com/satori/go.uuid"
   packages = ["."]
@@ -293,35 +234,6 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:9ff9e1808adfc43f788f1c1e9fd2660c285b522243da985a4c043ec6f2a2d736"
-  name = "github.com/syndtr/goleveldb"
-  packages = [
-    "leveldb",
-    "leveldb/cache",
-    "leveldb/comparer",
-    "leveldb/errors",
-    "leveldb/filter",
-    "leveldb/iterator",
-    "leveldb/journal",
-    "leveldb/memdb",
-    "leveldb/opt",
-    "leveldb/storage",
-    "leveldb/table",
-    "leveldb/util",
-  ]
-  pruneopts = "UT"
-  revision = "f9080354173f192dfc8821931eacf9cfd6819253"
-
-[[projects]]
-  branch = "master"
-  digest = "1:7427036b6d926b3d1fa0773771820735b35554a98296f1074df440ee30a97296"
-  name = "golang.org/x/net"
-  packages = ["websocket"]
-  pruneopts = "UT"
-  revision = "03003ca0c849e57b6ea29a4bab8d3cb6e4d568fe"
-
-[[projects]]
-  branch = "master"
   digest = "1:7ba061af4131fb44b30448572acd0d6fefbf63a61b97b7ef1dea0be5871c2742"
   name = "golang.org/x/sys"
   packages = ["unix"]
@@ -344,14 +256,6 @@
   version = "v0.3.0"
 
 [[projects]]
-  branch = "v2"
-  digest = "1:3d3f9391ab615be8655ae0d686a1564f3fec413979bb1aaf018bac1ec1bb1cc7"
-  name = "gopkg.in/natefinch/npipe.v2"
-  packages = ["."]
-  pruneopts = "UT"
-  revision = "c1b8fa8bdccecb0b8db834ee0b92fdbcfa606dd6"
-
-[[projects]]
   digest = "1:342378ac4dcb378a5448dd723f0784ae519383532f5e70ade24132c4c8693202"
   name = "gopkg.in/yaml.v2"
   packages = ["."]
@@ -363,7 +267,6 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
-    "github.com/ethereum/go-ethereum/ethclient",
     "github.com/go-redis/redis",
     "github.com/gobuffalo/packr",
     "github.com/inconshreveable/log15",
