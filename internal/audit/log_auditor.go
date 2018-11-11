@@ -69,7 +69,7 @@ func mergeLogKeys(req *http.Request, keys ... interface{}) []interface{} {
 		req.Header.Get("user-agent"),
 	}
 
-	return rpc.LogWithRequestID(req.Context(), append(defaults, keys...))
+	return rpc.LogWithRequestID(req.Context(), append(defaults, keys...)...)
 }
 
 func remoteAddr(req *http.Request) string {

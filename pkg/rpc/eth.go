@@ -4,25 +4,25 @@ const JSONRPC2 = "2.0"
 const InternalError = "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"internal error\"}}"
 
 type JSONRPCReq struct {
-	Jsonrpc string
-	Id      int
-	Method  string
+	Jsonrpc string `json:"jsonrpc"`
+	Id      int    `json:"id"`
+	Method  string `json:"method"`
 	Params  []interface{}
 }
 
 type JSONRPCErrorRes struct {
-	Jsonrpc string
-	Id int
-	Error   *JSONRPCErrorData
+	Jsonrpc string            `json:"jsonrpc"`
+	Id      int               `json:"id"`
+	Error   *JSONRPCErrorData `json:"error"`
 }
 
 type JSONRPCErrorData struct {
-	Code    int
-	Message string
+	Code    int    `json:"code"`
+	Message string `json:"message"`
 }
 
 type JSONRPCRes struct {
-	Jsonrpc string
-	Id      int
-	Result  interface{}
+	Jsonrpc string      `json:"jsonrpc"`
+	Id      int         `json:"id"`
+	Result  interface{} `json:"result"`
 }
