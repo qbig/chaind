@@ -237,7 +237,8 @@ func (h *EthHandler) hdlGetBlockByNumberAfter(body []byte, req *http.Request) er
 	if h.fHelper.IsFinalizedHex(blockNum) {
 		expiry = time.Hour
 	} else {
-		expiry = 5 * time.Second
+		h.logger.Debug("not caching un-finalized block")
+		return nil
 	}
 
 	cacheKey := blockNumCacheKey(blockNum, includeBodies)
@@ -316,7 +317,8 @@ func (h *EthHandler) hdlGetTransactionReceiptAfter(body []byte, req *http.Reques
 	if h.fHelper.IsFinalizedHex(blockNum) {
 		expiry = time.Hour
 	} else {
-		expiry = 5 * time.Second
+		h.logger.Debug("not caching un-finalized tx receipt")
+		return nil
 	}
 
 	cacheKey := txReceiptCacheKey(txHash)
