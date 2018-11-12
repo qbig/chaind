@@ -192,7 +192,7 @@ func (h *EthHandler) hdlGetBlockByNumberAfter(res *pkg.InterceptedResponse, req 
 		return err
 	}
 	cacheKey := blockNumCacheKey(blockNum, includeBodies)
-	err = h.cacher.Set(cacheKey, serialized)
+	err = h.cacher.SetEx(cacheKey, serialized, time.Hour)
 	if err != nil {
 		h.logger.Debug("post-processing failed while writing to cache", rpc.LogWithRequestID(ctx, "err", err)...)
 		return err
@@ -201,7 +201,7 @@ func (h *EthHandler) hdlGetBlockByNumberAfter(res *pkg.InterceptedResponse, req 
 	return nil
 }
 
-func writeResponse(res http.ResponseWriter, id int, data []byte) error {
+func writeResponse(res http.ResponseWriter, id interface{}, data []byte) error {
 	var result map[string]interface{}
 	err := json.Unmarshal(data, &result)
 	if err != nil {
@@ -221,11 +221,11 @@ func writeResponse(res http.ResponseWriter, id int, data []byte) error {
 	return nil
 }
 
-func failWithInternalError(res http.ResponseWriter, id int, err error) {
+func failWithInternalError(res http.ResponseWriter, id interface{}, err error) {
 	failRequest(res, id, -32600, err.Error())
 }
 
-func failRequest(res http.ResponseWriter, id int, code int, msg string) {
+func failRequest(res http.ResponseWriter, id interface{}, code int, msg string) {
 	outJson := &rpc.JSONRPCErrorRes{
 		Jsonrpc: rpc.JSONRPC2,
 		Id:      id,
