@@ -310,6 +310,12 @@ func (h *EthHandler) hdlGetTransactionReceiptAfter(body []byte, req *http.Reques
 	}
 	blockNum, ok := result["blockNumber"].(string)
 	if !ok {
+		nilBlockNum := result["blockNumber"]
+		if nilBlockNum == nil {
+			h.logger.Debug("skipping pending transaction", rpc.LogWithRequestID(ctx)...)
+			return nil
+		}
+
 		return errors.New("failed to parse block number from RPC results")
 	}
 
