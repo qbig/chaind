@@ -126,11 +126,11 @@ func (h *EthHandler) hdlRPCRequest(res http.ResponseWriter, req *http.Request, b
 	}
 
 	proxyRes, err := h.client.Post(backend.URL, "application/json", bytes.NewReader(body))
-	defer proxyRes.Body.Close()
-	if err != nil {
+	if err != nil || proxyRes.StatusCode != 200 {
 		failRequest(res, rpcReq.Id, -32602, "bad request")
 		return
 	}
+	defer proxyRes.Body.Close()
 
 	resBody, err := ioutil.ReadAll(proxyRes.Body)
 	if err != nil {
