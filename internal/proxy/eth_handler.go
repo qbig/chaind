@@ -62,11 +62,26 @@ func (h *EthHandler) Handle(res http.ResponseWriter, req *http.Request, backend 
 		return
 	}
 
+	var arrReq []interface{}
 	var rpcReq rpc.JSONRPCReq
-	err = json.Unmarshal(body, &rpcReq)
-	if err != nil {
-		failWithInternalError(res, 0, err)
-		return
+	err = json.Unmarshal(body, &arrReq)
+	if err == nil {
+		h.logger.Debug("parsing array value", rpc.LogWithRequestID(ctx)...)
+		var rpcReqSlice []rpc.JSONRPCReq
+		err = json.Unmarshal(body, &rpcReqSlice)
+		if err != nil {
+			res.WriteHeader(http.StatusBadRequest)
+			h.logger.Error("failed to parse request in array", rpc.LogWithRequestID(ctx, "err", err)...)
+			return
+		}
+		rpcReq = rpcReqSlice[0]
+	} else {
+		err = json.Unmarshal(body, &rpcReq)
+		if err != nil {
+			res.WriteHeader(http.StatusBadRequest)
+			h.logger.Error("failed to parse request", rpc.LogWithRequestID(ctx, "err", err)...)
+			return
+		}
 	}
 
 	err = h.auditor.RecordRequest(req, body, pkg.EthBackend)

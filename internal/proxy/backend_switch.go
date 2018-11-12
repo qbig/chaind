@@ -179,11 +179,11 @@ func (e *ETHChecker) Check() bool {
 		Timeout: time.Duration(2 * time.Second),
 	}
 	res, err := client.Post(e.backend.URL, "application/json", strings.NewReader(data))
-	defer res.Body.Close()
 	if err != nil {
 		e.logger.Warn("backend returned non-200 response", "name", e.backend.Name, "url", e.backend.URL)
 		return false
 	}
+	defer res.Body.Close()
 	var dec map[string]interface{}
 	err = json.NewDecoder(res.Body).Decode(&dec)
 	if err != nil {
