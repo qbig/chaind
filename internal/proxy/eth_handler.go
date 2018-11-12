@@ -7,12 +7,9 @@ import (
 	"github.com/kyokan/chaind/internal/cache"
 	"github.com/inconshreveable/log15"
 	"github.com/kyokan/chaind/pkg/log"
-	"context"
 	"time"
-	"net/url"
 	"io/ioutil"
 	"bytes"
-	"net/http/httputil"
 	"github.com/kyokan/chaind/pkg/rpc"
 	"fmt"
 	"strconv"
@@ -24,7 +21,7 @@ import (
 const FinalityDepth = 12
 
 type beforeFunc func(res http.ResponseWriter, req *http.Request, rpcReq *rpc.JSONRPCReq) bool
-type afterFunc func(res *pkg.InterceptedResponse, req *http.Request) error
+type afterFunc func(body []byte, req *http.Request) error
 
 type handler struct {
 	before beforeFunc
@@ -36,6 +33,7 @@ type EthHandler struct {
 	auditor  audit.Auditor
 	handlers map[string]*handler
 	logger   log15.Logger
+	client   *http.Client
 }
 
 func NewEthHandler(cacher cache.Cacher, auditor audit.Auditor) *EthHandler {
@@ -43,11 +41,18 @@ func NewEthHandler(cacher cache.Cacher, auditor audit.Auditor) *EthHandler {
 		cacher:  cacher,
 		auditor: auditor,
 		logger:  log.NewLog("proxy/eth_handler"),
+		client: &http.Client{
+			Timeout: time.Second,
+		},
 	}
 	h.handlers = map[string]*handler{
 		"eth_getBlockByNumber": {
 			before: h.hdlGetBlockByNumberBefore,
 			after:  h.hdlGetBlockByNumberAfter,
+		},
+		"eth_getTransactionReceipt": {
+			before: h.hdlGetTransactionReceiptBefore,
+			after:  h.hdlGetTransactionReceiptAfter,
 		},
 	}
 	return h
@@ -62,26 +67,47 @@ func (h *EthHandler) Handle(res http.ResponseWriter, req *http.Request, backend 
 		return
 	}
 
-	var arrReq []interface{}
-	var rpcReq rpc.JSONRPCReq
-	err = json.Unmarshal(body, &arrReq)
-	if err == nil {
-		h.logger.Debug("parsing array value", rpc.LogWithRequestID(ctx)...)
-		var rpcReqSlice []rpc.JSONRPCReq
-		err = json.Unmarshal(body, &rpcReqSlice)
+	firstChar := string(body[0])
+	// check if this is a batch request
+	if firstChar == "[" {
+		h.logger.Debug("got batch request", rpc.LogWithRequestID(ctx)...)
+		var rpcReqs []rpc.JSONRPCReq
+		err = json.Unmarshal(body, &rpcReqs)
 		if err != nil {
+			h.logger.Warn("received mal-formed batch request", rpc.LogWithRequestID(ctx, "err", err)...)
 			res.WriteHeader(http.StatusBadRequest)
-			h.logger.Error("failed to parse request in array", rpc.LogWithRequestID(ctx, "err", err)...)
 			return
 		}
-		rpcReq = rpcReqSlice[0]
+
+		batch := pkg.NewBatchResponse(res)
+		for _, rpcReq := range rpcReqs {
+			h.hdlRPCRequest(batch.ResponseWriter(), req, backend, &rpcReq)
+		}
+		if err := batch.Flush(); err != nil {
+			h.logger.Error("failed to flush batch", rpc.LogWithRequestID(ctx, "err", err)...)
+		}
+
+		h.logger.Debug("processed batch request", rpc.LogWithRequestID(ctx, "count", len(rpcReqs))...)
 	} else {
+		h.logger.Debug("got single request", rpc.LogWithRequestID(ctx, "err", err)...)
+		var rpcReq rpc.JSONRPCReq
 		err = json.Unmarshal(body, &rpcReq)
 		if err != nil {
+			h.logger.Warn("received mal-formed request", rpc.LogWithRequestID(ctx, "err", err)...)
 			res.WriteHeader(http.StatusBadRequest)
-			h.logger.Error("failed to parse request", rpc.LogWithRequestID(ctx, "err", err)...)
 			return
 		}
+
+		h.hdlRPCRequest(res, req, backend, &rpcReq)
+	}
+}
+
+func (h *EthHandler) hdlRPCRequest(res http.ResponseWriter, req *http.Request, backend *pkg.Backend, rpcReq *rpc.JSONRPCReq) {
+	ctx := req.Context()
+	body, err := json.Marshal(rpcReq)
+	if err != nil {
+		h.logger.Error("failed to unmarshal request body", rpc.LogWithRequestID(ctx, "err", err)...)
+		return
 	}
 
 	err = h.auditor.RecordRequest(req, body, pkg.EthBackend)
@@ -92,39 +118,41 @@ func (h *EthHandler) Handle(res http.ResponseWriter, req *http.Request, backend 
 	hdlr := h.handlers[rpcReq.Method]
 	handledInBefore := false
 	if hdlr != nil && hdlr.before != nil {
-		handledInBefore = hdlr.before(res, req, &rpcReq)
+		handledInBefore = hdlr.before(res, req, rpcReq)
 	}
 	if handledInBefore {
+		h.logger.Debug("request handled in before filter", rpc.LogWithRequestID(ctx)...)
 		return
 	}
 
-	iceptRes := pkg.InterceptResponse(res)
-	u, err := url.Parse(backend.URL)
+	proxyRes, err := h.client.Post(backend.URL, "application/json", bytes.NewReader(body))
+	defer proxyRes.Body.Close()
 	if err != nil {
-		h.logger.Error("failed to parse backend URL", rpc.LogWithRequestID(ctx, "url", backend.URL, "err", err)...)
+		failRequest(res, rpcReq.Id, -32602, "bad request")
 		return
 	}
-	req.URL.Scheme = u.Scheme
-	req.URL.Host = u.Host
-	req.URL.Path = u.Path
-	req.Host = u.Host
-	reader := ioutil.NopCloser(bytes.NewBuffer(body))
-	req.Body = reader
-	proxy := httputil.NewSingleHostReverseProxy(u)
-	timeoutCtx, _ := context.WithTimeout(ctx, time.Second)
-	req = req.WithContext(timeoutCtx)
-	proxy.ServeHTTP(iceptRes, req)
-	iceptRes.Flush()
+
+	resBody, err := ioutil.ReadAll(proxyRes.Body)
 	if err != nil {
-		h.logger.Error("failed to flush intercepted request", rpc.LogWithRequestID(ctx, "err", err)...)
+		failWithInternalError(res, rpcReq.Id, err)
+		h.logger.Error("failed to read body", rpc.LogWithRequestID(ctx, "err", err))
+	}
+
+	res.Write(resBody)
+	if err != nil {
+		h.logger.Error("failed to flush proxied request", rpc.LogWithRequestID(ctx, "err", err)...)
 		failWithInternalError(res, rpcReq.Id, err)
 		return
 	}
 
-	if hdlr != nil && hdlr.after != nil && iceptRes.IsOK() {
-		if err := hdlr.after(iceptRes, req); err != nil {
+	var errRes rpc.JSONRPCErrorRes
+	isErr := json.Unmarshal(resBody, &errRes) == nil && errRes.Error != nil
+	if hdlr != nil && hdlr.after != nil && !isErr {
+		if err := hdlr.after(resBody, req); err != nil {
 			h.logger.Error("request post-processing failed", rpc.LogWithRequestID(ctx, "err", err)...)
 		}
+	} else if isErr {
+		h.logger.Debug("skipping post-processors for error response", rpc.LogWithRequestID(ctx)...)
 	} else {
 		h.logger.Debug("no post-processor found", rpc.LogWithRequestID(ctx)...)
 	}
@@ -168,22 +196,26 @@ func (h *EthHandler) hdlGetBlockByNumberBefore(res http.ResponseWriter, req *htt
 		return true
 	}
 
+	if err != nil {
+		h.logger.Error("failed to get block from cache", rpc.LogWithRequestID(ctx, "err", err)...)
+	}
+
 	h.logger.Debug("found no blocks in block number cache", rpc.LogWithRequestID(ctx)...)
 	return false
 }
 
-func (h *EthHandler) hdlGetBlockByNumberAfter(res *pkg.InterceptedResponse, req *http.Request) error {
+func (h *EthHandler) hdlGetBlockByNumberAfter(body []byte, req *http.Request) error {
 	ctx := req.Context()
 	h.logger.Debug("post-processing eth_getBlockByNumber", rpc.LogWithRequestID(ctx)...)
-	body := res.Body()
 	var parsed rpc.JSONRPCRes
 	err := json.Unmarshal(body, &parsed)
 	if err != nil {
 		h.logger.Debug("post-processing failed while unmarshalling response", rpc.LogWithRequestID(ctx, "err", err)...)
 		return err
 	}
-	result, ok := parsed.Result.(map[string]interface{})
-	if !ok {
+	var result map[string]interface{}
+	err = json.Unmarshal(parsed.Result, &result)
+	if err != nil {
 		return errors.New("failed to parse RPC results")
 	}
 	blockNum, ok := result["number"].(string)
@@ -201,31 +233,88 @@ func (h *EthHandler) hdlGetBlockByNumberAfter(res *pkg.InterceptedResponse, req 
 		includeBodies = reflect.TypeOf(transactions[0]).Kind() != reflect.String
 	}
 
-	serialized, err := json.Marshal(result)
-	if err != nil {
-		h.logger.Debug("post-processing failed while marshalling to cache", rpc.LogWithRequestID(ctx, "err", err)...)
-		return err
-	}
 	cacheKey := blockNumCacheKey(blockNum, includeBodies)
-	err = h.cacher.SetEx(cacheKey, serialized, time.Hour)
+	err = h.cacher.SetEx(cacheKey, parsed.Result, time.Hour)
 	if err != nil {
 		h.logger.Debug("post-processing failed while writing to cache", rpc.LogWithRequestID(ctx, "err", err)...)
 		return err
 	}
-	h.logger.Debug("stored request in block number cache", rpc.LogWithRequestID(ctx, "cache_key", cacheKey, "size", len(serialized))...)
+	h.logger.Debug("stored request in block number cache", rpc.LogWithRequestID(ctx, "cache_key", cacheKey, "size", len(parsed.Result))...)
+	return nil
+}
+
+func (h *EthHandler) hdlGetTransactionReceiptBefore(res http.ResponseWriter, req *http.Request, rpcReq *rpc.JSONRPCReq) bool {
+	ctx := req.Context()
+	h.logger.Debug("pre-processing eth_getTransactionReceipt", rpc.LogWithRequestID(ctx)...)
+	params := rpcReq.Params
+	if len(params) == 0 {
+		return false
+	}
+
+	hash, ok := params[0].(string)
+	if !ok {
+		h.logger.Debug("encountered invalid tx hash param, bailing", rpc.LogWithRequestID(ctx, "tx_hash", params[0])...)
+	}
+
+	cacheKey := txReceiptCacheKey(hash)
+	h.logger.Debug("checking transaction receipt cache", rpc.LogWithRequestID(ctx, "cache_key", cacheKey)...)
+	cached, err := h.cacher.Get(cacheKey)
+	if err == nil && cached != nil {
+		err = writeResponse(res, rpcReq.Id, cached)
+		if err != nil {
+			h.logger.Error("failed to write cached response", "err", err)
+			return false
+		}
+		h.logger.Debug("found cached tx receipt response, sending", rpc.LogWithRequestID(ctx)...)
+		return true
+	}
+
+	if err != nil {
+		h.logger.Error("failed to get tx receipt from cache", rpc.LogWithRequestID(ctx, "err", err)...)
+	}
+
+	h.logger.Debug("found no tx receipts in tx receipt cache", rpc.LogWithRequestID(ctx)...)
+	return false
+}
+
+func (h *EthHandler) hdlGetTransactionReceiptAfter(body []byte, req *http.Request) error {
+	ctx := req.Context()
+	h.logger.Debug("post-processing eth_getTransactionReceipt", rpc.LogWithRequestID(ctx)...)
+	var parsed rpc.JSONRPCRes
+	err := json.Unmarshal(body, &parsed)
+	if err != nil {
+		h.logger.Debug("post-processing failed while unmarshalling response", rpc.LogWithRequestID(ctx, "err", err)...)
+		return err
+	}
+
+	if bytes.Equal(parsed.Result, []byte("null")) {
+		return nil
+	}
+
+	var result map[string]interface{}
+	err = json.Unmarshal(parsed.Result, &result)
+	if err != nil {
+		return errors.New("failed to parse RPC results")
+	}
+	txHash, ok := result["transactionHash"].(string)
+	if !ok {
+		return errors.New("failed to parse tx hash from RPC results")
+	}
+	cacheKey := txReceiptCacheKey(txHash)
+	err = h.cacher.SetEx(cacheKey, parsed.Result, time.Hour)
+	if err != nil {
+		h.logger.Debug("post-processing failed while writing to cache", rpc.LogWithRequestID(ctx, "err", err)...)
+		return err
+	}
+	h.logger.Debug("stored request in tx receipt cache", rpc.LogWithRequestID(ctx, "cache_key", cacheKey, "size", len(parsed.Result))...)
 	return nil
 }
 
 func writeResponse(res http.ResponseWriter, id interface{}, data []byte) error {
-	var result map[string]interface{}
-	err := json.Unmarshal(data, &result)
-	if err != nil {
-		return err
-	}
 	outJson := &rpc.JSONRPCRes{
 		Jsonrpc: rpc.JSONRPC2,
 		Id:      id,
-		Result:  result,
+		Result:  data,
 	}
 
 	out, err := json.Marshal(outJson)
@@ -260,4 +349,8 @@ func failRequest(res http.ResponseWriter, id interface{}, code int, msg string) 
 
 func blockNumCacheKey(blockNum string, includeBodies bool) string {
 	return fmt.Sprintf("block:%s:%s", blockNum, strconv.FormatBool(includeBodies))
+}
+
+func txReceiptCacheKey(hash string) string {
+	return fmt.Sprintf("txreceipt:%s", hash)
 }

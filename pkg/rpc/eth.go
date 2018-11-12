@@ -1,5 +1,7 @@
 package rpc
 
+import "encoding/json"
+
 const JSONRPC2 = "2.0"
 const InternalError = "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"internal error\"}}"
 
@@ -24,5 +26,5 @@ type JSONRPCErrorData struct {
 type JSONRPCRes struct {
 	Jsonrpc string      `json:"jsonrpc"`
 	Id      interface{} `json:"id"`
-	Result  interface{} `json:"result"`
+	Result  json.RawMessage `json:"result"`
 }
