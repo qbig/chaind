@@ -18,8 +18,6 @@ import (
 	"github.com/kyokan/chaind/internal/audit"
 )
 
-const FinalityDepth = 12
-
 type beforeFunc func(res http.ResponseWriter, req *http.Request, rpcReq *rpc.JSONRPCReq) bool
 type afterFunc func(body []byte, req *http.Request) error
 
@@ -31,15 +29,17 @@ type handler struct {
 type EthHandler struct {
 	cacher   cache.Cacher
 	auditor  audit.Auditor
+	fHelper  *FinalizationHelper
 	handlers map[string]*handler
 	logger   log15.Logger
 	client   *http.Client
 }
 
-func NewEthHandler(cacher cache.Cacher, auditor audit.Auditor) *EthHandler {
+func NewEthHandler(cacher cache.Cacher, auditor audit.Auditor, fHelper *FinalizationHelper) *EthHandler {
 	h := &EthHandler{
 		cacher:  cacher,
 		auditor: auditor,
+		fHelper: fHelper,
 		logger:  log.NewLog("proxy/eth_handler"),
 		client: &http.Client{
 			Timeout: time.Second,
@@ -233,8 +233,15 @@ func (h *EthHandler) hdlGetBlockByNumberAfter(body []byte, req *http.Request) er
 		includeBodies = reflect.TypeOf(transactions[0]).Kind() != reflect.String
 	}
 
+	var expiry time.Duration
+	if h.fHelper.IsFinalizedHex(blockNum) {
+		expiry = time.Hour
+	} else {
+		expiry = 5 * time.Second
+	}
+
 	cacheKey := blockNumCacheKey(blockNum, includeBodies)
-	err = h.cacher.SetEx(cacheKey, parsed.Result, time.Hour)
+	err = h.cacher.SetEx(cacheKey, parsed.Result, expiry)
 	if err != nil {
 		h.logger.Debug("post-processing failed while writing to cache", rpc.LogWithRequestID(ctx, "err", err)...)
 		return err
@@ -300,8 +307,20 @@ func (h *EthHandler) hdlGetTransactionReceiptAfter(body []byte, req *http.Reques
 	if !ok {
 		return errors.New("failed to parse tx hash from RPC results")
 	}
+	blockNum, ok := result["blockNumber"].(string)
+	if !ok {
+		return errors.New("failed to parse block number from RPC results")
+	}
+
+	var expiry time.Duration
+	if h.fHelper.IsFinalizedHex(blockNum) {
+		expiry = time.Hour
+	} else {
+		expiry = 5 * time.Second
+	}
+
 	cacheKey := txReceiptCacheKey(txHash)
-	err = h.cacher.SetEx(cacheKey, parsed.Result, time.Hour)
+	err = h.cacher.SetEx(cacheKey, parsed.Result, expiry)
 	if err != nil {
 		h.logger.Debug("post-processing failed while writing to cache", rpc.LogWithRequestID(ctx, "err", err)...)
 		return err

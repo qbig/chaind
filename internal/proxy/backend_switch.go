@@ -11,12 +11,14 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-		"encoding/json"
+	"encoding/json"
+	"github.com/kyokan/chaind/internal/storage"
 )
 
 const ethCheckBody = "{\"jsonrpc\":\"2.0\",\"method\":\"eth_syncing\",\"params\":[],\"id\":%d}"
 
 type BackendSwitch struct {
+	store       storage.Store
 	ethBackends []pkg.Backend
 	btcBackends []pkg.Backend
 	currEth     int32
@@ -25,20 +27,38 @@ type BackendSwitch struct {
 	logger      log15.Logger
 }
 
-func NewBackendSwitch(ethBackends []pkg.Backend, btcBackends []pkg.Backend) (*BackendSwitch, error) {
-	if len(ethBackends) == 0 && len(btcBackends) == 0 {
-		return nil, errors.New("no backends configured")
-	}
-
+func NewBackendSwitch(store storage.Store) *BackendSwitch {
 	return &BackendSwitch{
-		ethBackends: ethBackends,
-		btcBackends: btcBackends,
-		quitChan:    make(chan bool),
-		logger:      log.NewLog("proxy/backend_switch"),
-	}, nil
+		store:    store,
+		quitChan: make(chan bool),
+		logger:   log.NewLog("proxy/backend_switch"),
+	}
 }
 
 func (h *BackendSwitch) Start() error {
+	backends, err := h.store.GetBackends()
+	if err != nil {
+		return err
+	}
+
+	if len(backends) == 0 {
+		return errors.New("no backends configured")
+	}
+
+	var ethBackends []pkg.Backend
+	var btcBackends []pkg.Backend
+
+	for _, backend := range backends {
+		if backend.Type == pkg.EthBackend {
+			ethBackends = append(ethBackends, backend)
+		} else {
+			btcBackends = append(btcBackends, backend)
+		}
+	}
+
+	h.ethBackends = ethBackends
+	h.btcBackends = btcBackends
+
 	if len(h.ethBackends) > 0 {
 		var selected int32
 		for i, backend := range h.ethBackends {
@@ -156,7 +176,7 @@ func NewChecker(backend *pkg.Backend) Checker {
 	if backend.Type == pkg.EthBackend {
 		return &ETHChecker{
 			backend: backend,
-			logger: log.NewLog("proxy/eth_checker"),
+			logger:  log.NewLog("proxy/eth_checker"),
 		}
 	}
 
@@ -169,7 +189,7 @@ type Checker interface {
 
 type ETHChecker struct {
 	backend *pkg.Backend
-	logger log15.Logger
+	logger  log15.Logger
 }
 
 func (e *ETHChecker) Check() bool {
@@ -196,5 +216,3 @@ func (e *ETHChecker) Check() bool {
 	}
 	return true
 }
-
-

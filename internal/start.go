@@ -11,7 +11,7 @@ import (
 	"github.com/kyokan/chaind/internal/audit"
 	"github.com/kyokan/chaind/internal/cache"
 	"github.com/inconshreveable/log15"
-)
+	)
 
 func Start(cfg *config.Config) error {
 	logger := log.NewLog("")
@@ -30,9 +30,14 @@ func Start(cfg *config.Config) error {
 		return err
 	}
 
+	sw := proxy.NewBackendSwitch(store)
+	if err := sw.Start(); err != nil {
+		return err
+	}
+
 	cacher := cache.NewRedisCacher(cfg.RedisConfig)
 	if err := cacher.Start(); err != nil {
-	    return err
+		return err
 	}
 
 	auditor, err := audit.NewLogAuditor(cfg.LogAuditorConfig)
@@ -40,7 +45,12 @@ func Start(cfg *config.Config) error {
 		return err
 	}
 
-	prox := proxy.NewProxy(store, auditor, cacher, cfg)
+	fHelper := proxy.NewFinalizationHelper(sw)
+	if err := fHelper.Start(); err != nil {
+		return err
+	}
+
+	prox := proxy.NewProxy(sw, auditor, cacher, fHelper, cfg)
 	if err := prox.Start(); err != nil {
 		return err
 	}
@@ -52,11 +62,17 @@ func Start(cfg *config.Config) error {
 	go func() {
 		<-sigs
 		logger.Info("interrupted, shutting down")
-		if err := cacher.Stop(); err != nil {
-		    logger.Error("failed to stop cacher", "err", err)
-		}
 		if err := store.Stop(); err != nil {
 			logger.Error("failed to stop storage", "err", err)
+		}
+		if err := sw.Stop(); err != nil {
+			logger.Error("failed to stop backend switch", "err", err)
+		}
+		if err := cacher.Stop(); err != nil {
+			logger.Error("failed to stop cacher", "err", err)
+		}
+		if err := fHelper.Stop(); err != nil {
+			logger.Error("failed to stop finalization helper", "err", err)
 		}
 		if err := prox.Stop(); err != nil {
 			logger.Error("failed to stop proxy", "err", err)

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"context"
 	"time"
-	"github.com/pkg/errors"
 	"github.com/kyokan/chaind/internal/audit"
 	"github.com/satori/go.uuid"
 	"github.com/kyokan/chaind/internal/cache"
@@ -19,54 +18,25 @@ import (
 var logger = log.NewLog("proxy")
 
 type Proxy struct {
-	backendSwitch *BackendSwitch
-	store         storage.Store
-	config        *config.Config
-	ethHandler    *EthHandler
-	quitChan      chan bool
-	errChan       chan error
+	sw         *BackendSwitch
+	store      storage.Store
+	config     *config.Config
+	ethHandler *EthHandler
+	quitChan   chan bool
+	errChan    chan error
 }
 
-func NewProxy(store storage.Store, auditor audit.Auditor, cacher cache.Cacher, config *config.Config) *Proxy {
+func NewProxy(sw *BackendSwitch, auditor audit.Auditor, cacher cache.Cacher, fHelper *FinalizationHelper, config *config.Config) *Proxy {
 	return &Proxy{
-		store:      store,
+		sw:         sw,
 		config:     config,
-		ethHandler: NewEthHandler(cacher, auditor),
+		ethHandler: NewEthHandler(cacher, auditor, fHelper),
 		quitChan:   make(chan bool),
 		errChan:    make(chan error),
 	}
 }
 
 func (p *Proxy) Start() error {
-	backends, err := p.store.GetBackends()
-	if err != nil {
-		return err
-	}
-
-	if len(backends) == 0 {
-		return errors.New("no backends configured")
-	}
-
-	var ethBackends []pkg.Backend
-	var btcBackends []pkg.Backend
-
-	for _, backend := range backends {
-		if backend.Type == pkg.EthBackend {
-			ethBackends = append(ethBackends, backend)
-		} else {
-			btcBackends = append(btcBackends, backend)
-		}
-	}
-
-	backendSwitch, err := NewBackendSwitch(ethBackends, btcBackends)
-	if err != nil {
-		return err
-	}
-	p.backendSwitch = backendSwitch
-	if err := p.backendSwitch.Start(); err != nil {
-		return err
-	}
-
 	if p.config.UseTLS {
 		panic("TLS not implemented yet")
 	}
@@ -87,9 +57,6 @@ func (p *Proxy) Start() error {
 		<-p.quitChan
 		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
 		if err := s.Shutdown(ctx); err != nil {
-			p.errChan <- err
-		}
-		if err := p.backendSwitch.Stop(); err != nil {
 			p.errChan <- err
 		}
 		p.errChan <- nil
@@ -114,7 +81,7 @@ func (p *Proxy) handleETHRequest(res http.ResponseWriter, req *http.Request) {
 	}
 
 	start := time.Now()
-	backend, err := p.backendSwitch.BackendFor(pkg.EthBackend)
+	backend, err := p.sw.BackendFor(pkg.EthBackend)
 	if err != nil {
 		res.WriteHeader(http.StatusServiceUnavailable)
 		return
