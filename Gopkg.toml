@@ -59,3 +59,7 @@
 [[constraint]]
   name = "github.com/go-redis/redis"
   version = "6.14.2"
+
+[[constraint]]
+  name = "github.com/stretchr/testify"
+  version = "1.2.2"

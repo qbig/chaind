@@ -7,14 +7,11 @@ import (
 
 type BatchResponse struct {
 	writers     []*Interceptor
-	statusCodes []int
-	interceptor *Interceptor
 	res         http.ResponseWriter
 }
 
 func NewBatchResponse(res http.ResponseWriter) *BatchResponse {
 	return &BatchResponse{
-		interceptor: NewInterceptor(),
 		res:         res,
 	}
 }
@@ -28,10 +25,19 @@ func (b *BatchResponse) ResponseWriter() http.ResponseWriter {
 func (b *BatchResponse) Flush() error {
 	b.res.Write([]byte("["))
 	for i, w := range b.writers {
-		w.buf.WriteTo(b.res)
-		if i != len(b.writers)-1 {
+		var buf bytes.Buffer
+		n, err := w.buf.WriteTo(&buf)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			continue
+		}
+		if i != 0 {
 			b.res.Write([]byte(","))
 		}
+		buf.WriteTo(b.res)
+
 	}
 	b.res.Write([]byte("]"))
 	return nil
