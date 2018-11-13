@@ -213,6 +213,12 @@ func (h *EthHandler) hdlGetBlockByNumberAfter(body []byte, req *http.Request) er
 		h.logger.Debug("post-processing failed while unmarshalling response", rpc.LogWithRequestID(ctx, "err", err)...)
 		return err
 	}
+
+	if bytes.Equal(parsed.Result, []byte("null")) {
+		h.logger.Debug("skipping post-processing for null block")
+		return nil
+	}
+
 	var result map[string]interface{}
 	err = json.Unmarshal(parsed.Result, &result)
 	if err != nil {
